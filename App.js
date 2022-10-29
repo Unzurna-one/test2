@@ -1,4 +1,5 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
+import Geolocation from 'react-native-geolocation-service';
 
 import {
   View,
@@ -7,19 +8,75 @@ import {
   Text,
   Image,
   Dimensions,
+  PermissionsAndroid,
+  Platform,
 } from 'react-native';
 
-import MapView, {Marker, Polyline} from 'react-native-maps';
+import MapView, {AnimatedRegion, Marker, Polyline} from 'react-native-maps';
+import haversine from 'haversine';
+
 const {width, height} = Dimensions.get('window');
 
 const ASPECT_RATIO = width / height;
-let LATITUDE = 0;
-let LONGITUDE = 0;
-let LATITUDE_DELTA = 0.001;
-let LONGITUDE_DELTA = 0.001;
+let LATITUDE = 37.78825;
+let LONGITUDE = -122.4324;
+let LATITUDE_DELTA = 0.0922;
+let LONGITUDE_DELTA = 0.0421;
+
+// Function to get permission for location
+const requestLocationPermission = async () => {
+  try {
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      {
+        title: 'Geolocation Permission',
+        message: 'Can we access your location?',
+        buttonNeutral: 'Ask Me Later',
+        buttonNegative: 'Cancel',
+        buttonPositive: 'OK',
+      },
+    );
+    console.log('granted', granted);
+    if (granted === 'granted') {
+      // console.log('You can use Geolocation');
+      return true;
+    } else {
+      // console.log('You cannot use Geolocation');
+      return false;
+    }
+  } catch (err) {
+    return false;
+  }
+};
+
+// function to check permissions and get Location
+const getLocation = () => {
+  const result = requestLocationPermission();
+  result.then(res => {
+    console.log('res is:', res);
+    if (res) {
+      Geolocation.getCurrentPosition(
+        position => {
+          // console.log(position);
+          // LATITUDE_DELTA = 0.001;
+          LONGITUDE_DELTA = LATITUDE_DELTA * ASPECT_RATIO;
+          LATITUDE = position.coords.latitude;
+          LONGITUDE = position.coords.longitude;
+        },
+        error => {
+          // See error code charts below.
+          console.log(error.code, error.message);
+        },
+        {enableHighAccuracy: true, timeout: 15000, maximumAge: 10000},
+      );
+    }
+  });
+};
 
 const App = () => {
   let map: any;
+
+  getLocation();
   const [mapInfo, setMapInfo] = useState({
     prevPos: {latitude: LATITUDE, longitude: LONGITUDE},
     curPos: {latitude: LATITUDE, longitude: LONGITUDE},
@@ -28,9 +85,34 @@ const App = () => {
     longitudeDelta: LONGITUDE_DELTA,
     route: [],
   });
-  // changePosition = changePosition.bind(this);
-  // getRotation = getRotation.bind(this);
-  // updateMap = updateMap.bind(this);
+
+  useEffect(() => {
+    let watchID = Geolocation.watchPosition(
+      position => {
+        const {latitude, longitude} = position.coords;
+        const newCoordinate = {
+          latitude,
+          longitude,
+        };
+
+        const table1 = mapInfo.route.concat([newCoordinate]);
+        setMapInfo({
+          prevPos: mapInfo.curPos,
+          curPos: newCoordinate,
+          route: table1,
+        });
+        console.log(mapInfo.route);
+      },
+      error => console.log(error),
+      {
+        enableHighAccuracy: true,
+        timeout: 20000,
+        maximumAge: 5000,
+        distanceFilter: 5,
+      },
+    );
+    return () => Geolocation.clearWatch(watchID);
+  }, [mapInfo]);
 
   const changePosition = (latOffset: number, lonOffset: number) => {
     const latitude = mapInfo.curPos.latitude + latOffset;
