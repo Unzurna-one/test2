@@ -1,5 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import Geolocation from 'react-native-geolocation-service';
+import firestore from '@react-native-firebase/firestore';
 
 import {
   View,
@@ -19,14 +20,15 @@ import MapView, {
   PROVIDER_GOOGLE,
 } from 'react-native-maps';
 import haversine from 'haversine';
+import {async} from '@babel/runtime/helpers/regeneratorRuntime';
 
 const {width, height} = Dimensions.get('window');
 
 const ASPECT_RATIO = width / height;
-let LATITUDE = 37.78825;
-let LONGITUDE = -122.4324;
-let LATITUDE_DELTA = 0.0922;
-let LONGITUDE_DELTA = 0.0421;
+let LATITUDE;
+let LONGITUDE;
+let LATITUDE_DELTA;
+let LONGITUDE_DELTA;
 
 // Function to get permission for location
 const requestLocationPermission = async () => {
@@ -49,39 +51,76 @@ const requestLocationPermission = async () => {
 };
 
 // function to check permissions and get Location
-const getLocation = () => {
-  const result = requestLocationPermission();
-  result.then(res => {
-    if (res) {
-      Geolocation.getCurrentPosition(
-        position => {
-          //console.log(position);
-          // LATITUDE_DELTA = 0.001;
-          LONGITUDE_DELTA = LATITUDE_DELTA * ASPECT_RATIO;
-          LATITUDE = position.coords.latitude;
-          LONGITUDE = position.coords.longitude;
-        },
-        error => {
-          // See error code charts below.
-          console.log(error.code, error.message);
-        },
-        {enableHighAccuracy: true, timeout: 15000, maximumAge: 0},
-      );
+const getLocation = async () => {
+  try {
+    const result = await requestLocationPermission();
+
+    if (result) {
+      return new Promise((resolve, reject) => {
+        Geolocation.getCurrentPosition(position => {
+          resolve(position);
+        });
+      });
+
+      // Geolocation.getCurrentPosition(
+      //   position => {
+      //     console.log('current position = ', position);
+      //     LATITUDE_DELTA = 0.0922;
+      //     LONGITUDE_DELTA = LATITUDE_DELTA * ASPECT_RATIO;
+      //     LATITUDE = position.coords.latitude;
+      //     LONGITUDE = position.coords.longitude;
+      //   },
+      //   error => {
+      //     // See error code charts below.
+      //     console.log(error.code, error.message);
+      //   },
+      //   {enableHighAccuracy: false, timeout: 15000, maximumAge: 1000},
+      // );
     }
-  });
+  } catch (error) {
+    console.log(error);
+  }
 };
+
 let track = true;
 
 const App = () => {
   let map: any;
-  getLocation();
+
+  const [location, setLocation] = useState();
+  useEffect(() => {
+    async function fetchLocation() {
+      const response = await getLocation();
+      setLocation(response);
+      //console.log('location = ', location);
+      return response;
+    }
+
+    fetchLocation().then(r => {
+      //console.log('LOCATION = ', r);
+      LATITUDE_DELTA = 0.0922;
+      LONGITUDE_DELTA = LATITUDE_DELTA * ASPECT_RATIO;
+      LATITUDE = r.coords.latitude;
+      LONGITUDE = r.coords.longitude;
+    });
+  }, []);
+
   const [mapInfo, setMapInfo] = useState({
+    //getLocation().then(position => {
+    // LATITUDE_DELTA = 0.0922;
+    // LONGITUDE_DELTA = LATITUDE_DELTA * ASPECT_RATIO;
+    // LATITUDE = position.coords.latitude;
+    // LONGITUDE = position.coords.longitude;
+    //return {
     prevPos: {latitude: LATITUDE, longitude: LONGITUDE},
     curPos: {latitude: LATITUDE, longitude: LONGITUDE},
     curAng: 45,
     latitudeDelta: LATITUDE_DELTA,
     longitudeDelta: LONGITUDE_DELTA,
+    distanceTravelled: 0,
     route: [],
+    //};
+    // });
   });
 
   const getMapRegion = () => {
@@ -92,27 +131,58 @@ const App = () => {
       longitudeDelta: LONGITUDE_DELTA,
     };
   };
+  const calcDistance = newLatLng => {
+    console.log('mapInfo = ', mapInfo);
 
+    const prevLatLng = mapInfo.prevPos.longitude ? mapInfo.prevPos : newLatLng;
+    console.log('prevLatLng = ', prevLatLng);
+    console.log('newLatLng = ', newLatLng);
+
+    return haversine(prevLatLng, newLatLng, {unit: 'meter'}) || 0;
+  };
+
+  let watchID;
   useEffect(() => {
-    let watchID = Geolocation.watchPosition(
+    //console.log('mapInfo = ', mapInfo);
+
+    const {route, distanceTravelled} = mapInfo;
+
+    watchID = Geolocation.watchPosition(
       position => {
         const {latitude, longitude} = position.coords;
-        const newCoordinate = {
-          latitude,
-          longitude,
-        };
 
-        const table1 = mapInfo.route.concat([newCoordinate]);
+        const newCoordinate = {latitude, longitude};
+
+        //console.log('mapInfo.distanceTravelled = ', mapInfo.distanceTravelled);
+        console.log('distanceTravelled = ', distanceTravelled);
+
+        const table1 =
+          calcDistance(newCoordinate) < 2
+            ? route
+            : route.concat([newCoordinate]);
         setMapInfo({
-          prevPos: mapInfo.curPos,
+          prevPos: mapInfo?.curPos ? mapInfo.curPos : newCoordinate,
           curPos: newCoordinate,
           route: table1,
+          distanceTravelled: distanceTravelled + calcDistance(newCoordinate),
         });
-        console.log('position.coords = ', JSON.stringify(position));
-        console.log('position.coords = ', position.coords.latitude);
-        console.log('position.coords = ', position.coords.longitude);
-        // console.log('button pressed = ', press);
-        console.log('track activated pressed = ', track);
+
+        //console.log('distanceTravelled = ', mapInfo.distanceTravelled);
+
+        firestore()
+          .collection('Lines')
+          .add({
+            name: 'Ada Lovelace',
+            age: 30,
+          })
+          .then(() => {
+            console.log('User added!');
+          });
+
+        //console.log('position = ', JSON.stringify(position));
+        //console.log('position.coords.latitude = ', position.coords.latitude);
+        //console.log('position.coords.longitude = ', position.coords.longitude);
+        //console.log('track activated pressed = ', track);
       },
       error => console.log(error),
       {
@@ -123,7 +193,7 @@ const App = () => {
       },
     );
     return () => Geolocation.clearWatch(watchID);
-  }, [mapInfo]);
+  }, [mapInfo, watchID]);
 
   const changePosition = (latOffset: number, lonOffset: number) => {
     const latitude = mapInfo.curPos.latitude + latOffset;
@@ -155,62 +225,64 @@ const App = () => {
   const trackPosition = () => {
     track = !track;
     console.log('track over function ', track);
-    track ? Geolocation.clearWatch() : setMapInfo({...mapInfo});
+    track ? Geolocation.stopObserving(watchID) : setMapInfo({...mapInfo});
   };
-  return (
-    <View style={styles.flex}>
-      <MapView
-        provider={PROVIDER_GOOGLE}
-        ref={el => (map = el)}
-        style={styles.flex}
-        minZoomLevel={15}
-        region={getMapRegion()}>
-        <Polyline
-          coordinates={mapInfo.route}
-          strokeWidth={10}
-          strokeColor={'#2353b2'}
-          pinColor="#ce3624"
-        />
-        <Marker coordinate={mapInfo.curPos} anchor={{x: 0.5, y: 0.5}}>
-          <Image
-            source={require('./assets/car.jpg')}
-            style={{width: 40, height: 40}}
-          />
-        </Marker>
-      </MapView>
-      <View style={styles.buttonContainerUpDown}>
-        <TouchableOpacity
-          style={[styles.button, styles.up]}
-          onPress={() => changePosition(0.0001, 0)}>
-          <Text>+ Lat</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.button, styles.down]}
-          onPress={() => changePosition(-0.0001, 0)}>
-          <Text>- Lat</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={styles.buttonContainerLeftRight}>
-        <TouchableOpacity
-          style={[styles.button, styles.left]}
-          onPress={() => changePosition(0, -0.0001)}>
-          <Text>- Lon</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.button, styles.right]}
-          onPress={() => changePosition(0, 0.0001)}>
-          <Text>+ Lon</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[track ? styles.buttonPressed : styles.button, styles.corner]}
-          onPress={() => trackPosition()}>
-          <Text>Track</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
 
+  if (mapInfo && location) {
+    return (
+      <View style={styles.flex}>
+        <MapView
+          provider={PROVIDER_GOOGLE}
+          ref={el => (map = el)}
+          style={styles.flex}
+          minZoomLevel={15}
+          region={getMapRegion()}>
+          <Polyline
+            coordinates={mapInfo.route}
+            strokeWidth={10}
+            strokeColor={'#2353b2'}
+            pinColor="#ce3624"
+          />
+          <Marker coordinate={mapInfo.curPos} anchor={{x: 0.5, y: 0.5}}>
+            <Image
+              source={require('./assets/car.jpg')}
+              style={{width: 40, height: 40}}
+            />
+          </Marker>
+        </MapView>
+        <View style={styles.buttonContainerUpDown}>
+          <TouchableOpacity
+            style={[styles.button, styles.up]}
+            onPress={() => changePosition(0.0001, 0)}>
+            <Text>+ Lat</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.button, styles.down]}
+            onPress={() => changePosition(-0.0001, 0)}>
+            <Text>- Lat</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.buttonContainerLeftRight}>
+          <TouchableOpacity
+            style={[styles.button, styles.left]}
+            onPress={() => changePosition(0, -0.0001)}>
+            <Text>- Lon</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.button, styles.right]}
+            onPress={() => changePosition(0, 0.0001)}>
+            <Text>+ Lon</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[track ? styles.toggleOn : styles.toggleOff, styles.corner]}
+            onPress={() => trackPosition()}>
+            <Text>Track</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+};
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
@@ -226,13 +298,14 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     justifyContent: 'center',
   },
-  buttonPressed: {
+  toggleOn: {
     backgroundColor: 'rgba(0,100,100,0.8)',
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 20,
-    height: 50,
+    margin: 10,
+    borderRadius: 10,
+    height: 30,
     width: 50,
   },
   button: {
@@ -242,6 +315,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 20,
     height: 50,
+    width: 50,
+  },
+  toggleOff: {
+    margin: 10,
+
+    backgroundColor: 'rgba(100,100,100,0.2)',
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    height: 30,
     width: 50,
   },
   up: {
