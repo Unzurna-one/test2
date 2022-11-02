@@ -12,7 +12,12 @@ import {
   Platform,
 } from 'react-native';
 
-import MapView, {AnimatedRegion, Marker, Polyline} from 'react-native-maps';
+import MapView, {
+  AnimatedRegion,
+  Marker,
+  Polyline,
+  PROVIDER_GOOGLE,
+} from 'react-native-maps';
 import haversine from 'haversine';
 
 const {width, height} = Dimensions.get('window');
@@ -36,14 +41,8 @@ const requestLocationPermission = async () => {
         buttonPositive: 'OK',
       },
     );
-    console.log('granted', granted);
-    if (granted === 'granted') {
-      // console.log('You can use Geolocation');
-      return true;
-    } else {
-      // console.log('You cannot use Geolocation');
-      return false;
-    }
+    //console.log('granted', granted);
+    return granted === 'granted';
   } catch (err) {
     return false;
   }
@@ -53,11 +52,10 @@ const requestLocationPermission = async () => {
 const getLocation = () => {
   const result = requestLocationPermission();
   result.then(res => {
-    console.log('res is:', res);
     if (res) {
       Geolocation.getCurrentPosition(
         position => {
-          // console.log(position);
+          //console.log(position);
           // LATITUDE_DELTA = 0.001;
           LONGITUDE_DELTA = LATITUDE_DELTA * ASPECT_RATIO;
           LATITUDE = position.coords.latitude;
@@ -67,15 +65,15 @@ const getLocation = () => {
           // See error code charts below.
           console.log(error.code, error.message);
         },
-        {enableHighAccuracy: true, timeout: 15000, maximumAge: 10000},
+        {enableHighAccuracy: true, timeout: 15000, maximumAge: 0},
       );
     }
   });
 };
+let track = true;
 
 const App = () => {
   let map: any;
-
   getLocation();
   const [mapInfo, setMapInfo] = useState({
     prevPos: {latitude: LATITUDE, longitude: LONGITUDE},
@@ -85,6 +83,15 @@ const App = () => {
     longitudeDelta: LONGITUDE_DELTA,
     route: [],
   });
+
+  const getMapRegion = () => {
+    return {
+      latitude: LATITUDE,
+      longitude: LONGITUDE,
+      latitudeDelta: LATITUDE_DELTA,
+      longitudeDelta: LONGITUDE_DELTA,
+    };
+  };
 
   useEffect(() => {
     let watchID = Geolocation.watchPosition(
@@ -101,14 +108,18 @@ const App = () => {
           curPos: newCoordinate,
           route: table1,
         });
-        console.log(mapInfo.route);
+        console.log('position.coords = ', JSON.stringify(position));
+        console.log('position.coords = ', position.coords.latitude);
+        console.log('position.coords = ', position.coords.longitude);
+        // console.log('button pressed = ', press);
+        console.log('track activated pressed = ', track);
       },
       error => console.log(error),
       {
         enableHighAccuracy: true,
         timeout: 20000,
         maximumAge: 5000,
-        distanceFilter: 5,
+        distanceFilter: 10,
       },
     );
     return () => Geolocation.clearWatch(watchID);
@@ -141,18 +152,19 @@ const App = () => {
     const curRot = getRotation(prevPos, curPos);
     map.animateCamera({heading: curRot, center: curPos, pitch: curAng});
   };
-
+  const trackPosition = () => {
+    track = !track;
+    console.log('track over function ', track);
+    track ? Geolocation.clearWatch() : setMapInfo({...mapInfo});
+  };
   return (
     <View style={styles.flex}>
       <MapView
+        provider={PROVIDER_GOOGLE}
         ref={el => (map = el)}
         style={styles.flex}
         minZoomLevel={15}
-        initialRegion={{
-          ...mapInfo.curPos,
-          latitudeDelta: mapInfo.latitudeDelta,
-          longitudeDelta: mapInfo.longitudeDelta,
-        }}>
+        region={getMapRegion()}>
         <Polyline
           coordinates={mapInfo.route}
           strokeWidth={10}
@@ -189,6 +201,11 @@ const App = () => {
           onPress={() => changePosition(0, 0.0001)}>
           <Text>+ Lon</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[track ? styles.buttonPressed : styles.button, styles.corner]}
+          onPress={() => trackPosition()}>
+          <Text>Track</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -208,6 +225,15 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     flexDirection: 'column',
     justifyContent: 'center',
+  },
+  buttonPressed: {
+    backgroundColor: 'rgba(0,100,100,0.8)',
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
+    height: 50,
+    width: 50,
   },
   button: {
     backgroundColor: 'rgba(100,100,100,0.2)',
@@ -229,6 +255,10 @@ const styles = StyleSheet.create({
   },
   right: {
     alignSelf: 'flex-end',
+  },
+  corner: {
+    right: 0,
+    top: 0,
   },
 });
 export default App;

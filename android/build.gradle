@@ -7,7 +7,7 @@ buildscript {
         compileSdkVersion = 31
         targetSdkVersion = 31
         // Any of the following will work
-        googlePlayServicesVersion      = "17.0.0"
+        googlePlayServicesVersion = "18.0.0"
         // playServicesVersion         = "17.0.0"
         // playServicesLocationVersion = "17.0.0"
         if (System.properties['os.arch'] == "aarch64") {
