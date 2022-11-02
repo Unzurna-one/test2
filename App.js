@@ -132,52 +132,66 @@ const App = () => {
     };
   };
   const calcDistance = newLatLng => {
-    console.log('mapInfo = ', mapInfo);
+    //console.log('mapInfo = ', mapInfo);
 
     const prevLatLng = mapInfo.prevPos.longitude ? mapInfo.prevPos : newLatLng;
-    console.log('prevLatLng = ', prevLatLng);
-    console.log('newLatLng = ', newLatLng);
+    //console.log('prevLatLng = ', prevLatLng);
+    //console.log('newLatLng = ', newLatLng);
 
     return haversine(prevLatLng, newLatLng, {unit: 'meter'}) || 0;
   };
 
   let watchID;
+  let distance;
   useEffect(() => {
     //console.log('mapInfo = ', mapInfo);
+    let routeToStore = [];
 
-    const {route, distanceTravelled} = mapInfo;
+    let {route, distanceTravelled} = mapInfo;
+    const reset = () => {
+      routeToStore = mapInfo.route;
+      //console.log(' routeToStore = ', routeToStore);
+      return [];
+    };
 
     watchID = Geolocation.watchPosition(
       position => {
         const {latitude, longitude} = position.coords;
 
         const newCoordinate = {latitude, longitude};
-
         //console.log('mapInfo.distanceTravelled = ', mapInfo.distanceTravelled);
         console.log('distanceTravelled = ', distanceTravelled);
 
-        const table1 =
-          calcDistance(newCoordinate) < 2
+        //console.log(' routeToStore = ', route);
+        const table =
+          distanceTravelled < 2
             ? route
-            : route.concat([newCoordinate]);
+            : distanceTravelled > 2 && distanceTravelled < 100
+            ? route.concat([newCoordinate])
+            : [];
         setMapInfo({
           prevPos: mapInfo?.curPos ? mapInfo.curPos : newCoordinate,
           curPos: newCoordinate,
-          route: table1,
-          distanceTravelled: distanceTravelled + calcDistance(newCoordinate),
+          route: table,
+          distanceTravelled:
+            distanceTravelled > 100
+              ? 0
+              : distanceTravelled + calcDistance(newCoordinate),
         });
 
         //console.log('distanceTravelled = ', mapInfo.distanceTravelled);
-
-        firestore()
-          .collection('Lines')
-          .add({
-            name: 'Ada Lovelace',
-            age: 30,
-          })
-          .then(() => {
-            console.log('User added!');
-          });
+        if (distanceTravelled > 100) {
+          firestore()
+            .collection('Lines')
+            .add({
+              name: JSON.stringify(mapInfo.route),
+              age: 30,
+            })
+            .then(() => {
+              console.log('User added!');
+            });
+          distanceTravelled = 0;
+        }
 
         //console.log('position = ', JSON.stringify(position));
         //console.log('position.coords.latitude = ', position.coords.latitude);
