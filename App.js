@@ -1,26 +1,19 @@
 import React, {useEffect, useState} from 'react';
 import Geolocation from 'react-native-geolocation-service';
-import firestore from '@react-native-firebase/firestore';
+import firestore, {firebase} from '@react-native-firebase/firestore';
 
 import {
-  View,
-  StyleSheet,
-  TouchableOpacity,
-  Text,
-  Image,
   Dimensions,
+  Image,
   PermissionsAndroid,
-  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
-import MapView, {
-  AnimatedRegion,
-  Marker,
-  Polyline,
-  PROVIDER_GOOGLE,
-} from 'react-native-maps';
+import MapView, {Marker, Polyline, PROVIDER_GOOGLE} from 'react-native-maps';
 import haversine from 'haversine';
-import {async} from '@babel/runtime/helpers/regeneratorRuntime';
 
 const {width, height} = Dimensions.get('window');
 
@@ -82,45 +75,57 @@ const getLocation = async () => {
   }
 };
 
-let track = true;
+const useConstructor = (callBack = () => {}) => {
+  const [hasBeenCalled, setHasBeenCalled] = useState(false);
+  if (hasBeenCalled) {
+    return;
+  }
+  callBack();
+  setHasBeenCalled(true);
+};
+
+let track = false;
+
+const getData = async () => {
+  const col = await firebase.firestore().collection('lines').get();
+  const result = [];
+  //console.log('collection =', col);
+  if (col.size) {
+    col.forEach(doc => {
+      const data = JSON.parse(doc.data().route);
+      result.push(...data);
+    });
+  }
+
+  return result;
+};
 
 const App = () => {
-  let map: any;
+  useConstructor(() => {
+    console.log(
+      ':::::::::::::::::::::::::: Occurs ONCE, BEFORE the initial render.:::::::::::::::::::::::::::::::::::::::',
+    );
+    const loc = getLocation();
 
-  const [location, setLocation] = useState();
-  useEffect(() => {
-    async function fetchLocation() {
-      const response = await getLocation();
-      setLocation(response);
-      //console.log('location = ', location);
-      return response;
-    }
-
-    fetchLocation().then(r => {
-      //console.log('LOCATION = ', r);
+    loc.then(r => {
       LATITUDE_DELTA = 0.0922;
       LONGITUDE_DELTA = LATITUDE_DELTA * ASPECT_RATIO;
       LATITUDE = r.coords.latitude;
       LONGITUDE = r.coords.longitude;
     });
-  }, []);
+  });
+
+  let map: any;
 
   const [mapInfo, setMapInfo] = useState({
-    //getLocation().then(position => {
-    // LATITUDE_DELTA = 0.0922;
-    // LONGITUDE_DELTA = LATITUDE_DELTA * ASPECT_RATIO;
-    // LATITUDE = position.coords.latitude;
-    // LONGITUDE = position.coords.longitude;
-    //return {
-    prevPos: {latitude: LATITUDE, longitude: LONGITUDE},
-    curPos: {latitude: LATITUDE, longitude: LONGITUDE},
+    prevPos: {latitude: 0, longitude: 0},
+    curPos: {latitude: 0, longitude: 0},
     curAng: 45,
     latitudeDelta: LATITUDE_DELTA,
     longitudeDelta: LONGITUDE_DELTA,
     distanceTravelled: 0,
     route: [],
-    //};
-    // });
+    lines: [],
   });
 
   const getMapRegion = () => {
@@ -131,10 +136,13 @@ const App = () => {
       longitudeDelta: LONGITUDE_DELTA,
     };
   };
-  const calcDistance = newLatLng => {
-    //console.log('mapInfo = ', mapInfo);
 
-    const prevLatLng = mapInfo.prevPos.longitude ? mapInfo.prevPos : newLatLng;
+  const calcDistance = newLatLng => {
+    console.log('mapInfo.prevPos = ', mapInfo.prevPos);
+    console.log('mapInfo.curPos = ', mapInfo.curPos);
+
+    const prevLatLng =
+      mapInfo.prevPos?.longitude && true ? mapInfo.prevPos : newLatLng;
     //console.log('prevLatLng = ', prevLatLng);
     //console.log('newLatLng = ', newLatLng);
 
@@ -142,67 +150,81 @@ const App = () => {
   };
 
   let watchID;
-  let distance;
+
+  function displayLines() {
+    getData().then(res => {
+      //console.log('res =', res);
+      setMapInfo(prev => ({...prev, lines: res}));
+    });
+  }
+
+  const [pos, setPos] = useState([]);
+
   useEffect(() => {
+    //console.log('useEffect 2 :::: ');
+
     //console.log('mapInfo = ', mapInfo);
-    let routeToStore = [];
 
     let {route, distanceTravelled} = mapInfo;
-    const reset = () => {
-      routeToStore = mapInfo.route;
-      //console.log(' routeToStore = ', routeToStore);
-      return [];
-    };
-
+    //console.log('mapInfo = ', mapInfo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     watchID = Geolocation.watchPosition(
       position => {
-        const {latitude, longitude} = position.coords;
+        if (position.coords !== pos) {
+          setPos(position.coords);
+          const {latitude, longitude} = position.coords;
+          const newCoordinate = {latitude, longitude};
+          console.log('position = ', position.coords);
+          //console.log('newCoordinate = ', newCoordinate);
+          console.log('distanceTravelled = ', distanceTravelled);
+          const delta = calcDistance(newCoordinate);
 
-        const newCoordinate = {latitude, longitude};
-        //console.log('mapInfo.distanceTravelled = ', mapInfo.distanceTravelled);
-        console.log('distanceTravelled = ', distanceTravelled);
+          console.log('delta = ', delta);
+          const table =
+            delta < 2
+              ? route
+              : distanceTravelled < 100
+              ? route.concat([newCoordinate])
+              : [];
+          console.log('mapInfo.route = ', mapInfo?.route);
+          setMapInfo(prev => ({
+            ...prev,
+            prevPos: mapInfo?.curPos && true ? mapInfo.curPos : newCoordinate,
+            curPos: newCoordinate,
+            route: table,
+            distanceTravelled:
+              distanceTravelled > 100 ? +0 : distanceTravelled + delta,
+          }));
+          //console.log('mapInfo.route =', mapInfo.route);
+          //console.log('distanceTravelled = ', mapInfo.distanceTravelled);
+          if (distanceTravelled > 100) {
+            const maDate = new Date();
 
-        //console.log(' routeToStore = ', route);
-        const table =
-          distanceTravelled < 2
-            ? route
-            : distanceTravelled > 2 && distanceTravelled < 100
-            ? route.concat([newCoordinate])
-            : [];
-        setMapInfo({
-          prevPos: mapInfo?.curPos ? mapInfo.curPos : newCoordinate,
-          curPos: newCoordinate,
-          route: table,
-          distanceTravelled:
-            distanceTravelled > 100
-              ? 0
-              : distanceTravelled + calcDistance(newCoordinate),
-        });
+            firestore()
+              .collection('lines')
+              .add({
+                route: JSON.stringify(mapInfo.route),
+                date: maDate.toLocaleDateString('fr'),
+              })
+              .then(() => {
+                console.log('route added!');
+              });
+            distanceTravelled = 0;
+          }
 
-        //console.log('distanceTravelled = ', mapInfo.distanceTravelled);
-        if (distanceTravelled > 100) {
-          firestore()
-            .collection('Lines')
-            .add({
-              name: JSON.stringify(mapInfo.route),
-              age: 30,
-            })
-            .then(() => {
-              console.log('User added!');
-            });
-          distanceTravelled = 0;
+          //console.log('mapInfo.route =', mapInfo.route);
+
+          //console.log('position = ', JSON.stringify(position));
+          //console.log('position.coords.latitude = ', position.coords.latitude);
+          //console.log('position.coords.longitude = ', position.coords.longitude);
+          //console.log('track activated pressed = ', track);
         }
-
-        //console.log('position = ', JSON.stringify(position));
-        //console.log('position.coords.latitude = ', position.coords.latitude);
-        //console.log('position.coords.longitude = ', position.coords.longitude);
-        //console.log('track activated pressed = ', track);
       },
       error => console.log(error),
       {
         enableHighAccuracy: true,
-        timeout: 20000,
-        maximumAge: 5000,
+        timeout: 0,
+        maximumAge: 0,
         distanceFilter: 10,
       },
     );
@@ -212,13 +234,18 @@ const App = () => {
   const changePosition = (latOffset: number, lonOffset: number) => {
     const latitude = mapInfo.curPos.latitude + latOffset;
     const longitude = mapInfo.curPos.longitude + lonOffset;
-    let table = mapInfo.route.concat(mapInfo.curPos);
-    setMapInfo({
+    //let table = mapInfo.route.concat(mapInfo.curPos);
+    setMapInfo(prev => ({
+      ...prev,
       prevPos: mapInfo.curPos,
       curPos: {latitude, longitude},
-      route: table,
-    });
-    console.log(mapInfo.route);
+      //  route: table,
+    }));
+    console.log(' >>>>>>>>>>>>>>  change position <<<<<<<<<<<<<<<<<<<');
+
+    console.log('previous', mapInfo.prevPos);
+    console.log('current', mapInfo.curPos);
+
     updateMap();
   };
 
@@ -239,10 +266,10 @@ const App = () => {
   const trackPosition = () => {
     track = !track;
     console.log('track over function ', track);
-    track ? Geolocation.stopObserving(watchID) : setMapInfo({...mapInfo});
+    track ? Geolocation.stopObserving() : setMapInfo({...mapInfo});
   };
 
-  if (mapInfo && location) {
+  if (LATITUDE && LONGITUDE && mapInfo.curPos) {
     return (
       <View style={styles.flex}>
         <MapView
@@ -251,12 +278,22 @@ const App = () => {
           style={styles.flex}
           minZoomLevel={15}
           region={getMapRegion()}>
-          <Polyline
-            coordinates={mapInfo.route}
-            strokeWidth={10}
-            strokeColor={'#2353b2'}
-            pinColor="#ce3624"
-          />
+          {mapInfo.route ? (
+            <Polyline
+              coordinates={mapInfo.route}
+              strokeWidth={10}
+              strokeColor={'#2353b2'}
+              pinColor="#ce3624"
+            />
+          ) : null}
+          {mapInfo.lines ? (
+            <Polyline
+              coordinates={mapInfo.lines}
+              strokeWidth={10}
+              strokeColor={'#ff53b2'}
+              pinColor="#ff3624"
+            />
+          ) : null}
           <Marker coordinate={mapInfo.curPos} anchor={{x: 0.5, y: 0.5}}>
             <Image
               source={require('./assets/car.jpg')}
@@ -267,30 +304,41 @@ const App = () => {
         <View style={styles.buttonContainerUpDown}>
           <TouchableOpacity
             style={[styles.button, styles.up]}
-            onPress={() => changePosition(0.0001, 0)}>
+            onPress={() => changePosition(0.01, 0)}>
             <Text>+ Lat</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.button, styles.down]}
-            onPress={() => changePosition(-0.0001, 0)}>
+            onPress={() => changePosition(-0.01, 0)}>
             <Text>- Lat</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.buttonContainerLeftRight}>
           <TouchableOpacity
             style={[styles.button, styles.left]}
-            onPress={() => changePosition(0, -0.0001)}>
+            onPress={() => changePosition(0, -0.01)}>
             <Text>- Lon</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.button, styles.right]}
-            onPress={() => changePosition(0, 0.0001)}>
+            onPress={() => changePosition(0, 0.01)}>
             <Text>+ Lon</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[track ? styles.toggleOn : styles.toggleOff, styles.corner]}
+            style={[
+              track ? styles.toggleOn : styles.toggleOff,
+              styles.cornerTopRight,
+            ]}
             onPress={() => trackPosition()}>
             <Text>Track</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              track ? styles.toggleOn : styles.toggleOff,
+              styles.cornerTopLeft,
+            ]}
+            onPress={() => displayLines()}>
+            <Text>Lines</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -333,7 +381,6 @@ const styles = StyleSheet.create({
   },
   toggleOff: {
     margin: 10,
-
     backgroundColor: 'rgba(100,100,100,0.2)',
     position: 'absolute',
     alignItems: 'center',
@@ -354,8 +401,12 @@ const styles = StyleSheet.create({
   right: {
     alignSelf: 'flex-end',
   },
-  corner: {
+  cornerTopRight: {
     right: 0,
+    top: 0,
+  },
+  cornerTopLeft: {
+    left: 0,
     top: 0,
   },
 });
