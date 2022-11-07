@@ -84,21 +84,36 @@ const useConstructor = (callBack = () => {}) => {
   setHasBeenCalled(true);
 };
 
-let track = false;
+let track = true;
 
 const getData = async () => {
-  const col = await firebase.firestore().collection('lines').get();
+  const col = await firestore().collection('lines').get();
   const result = [];
   //console.log('collection =', col);
   if (col.size) {
-    col.forEach(doc => {
+    //Array.from(col).sort((a, b) => a[1] - b[1]);
+    // Object.entries(col)
+    //   .sort(([, a], [, b]) => a.data().id - b.data().id)
+    //   .reduce(
+    //     (r, [k, v]) => ({
+    //       ...r,
+    //       [k]: v,
+    //     }),
+    //     {},
+    //   );
+
+    col.forEach((doc, i) => {
+      // console.log('doc =', doc);
+      // console.log('doc.data().route =', doc.data().route);
+      doc.color = '#' + Math.floor(Math.random() * 16777215).toString(16);
       const data = JSON.parse(doc.data().route);
-      result.push(...data);
+      result.push({color: doc.color, data: data});
     });
   }
-
+  console.log('result =', result);
   return result;
 };
+let i = 0;
 
 const App = () => {
   useConstructor(() => {
@@ -130,16 +145,22 @@ const App = () => {
 
   const getMapRegion = () => {
     return {
+      // latitude: mapInfo?.curPos.latitude ? mapInfo?.curPos.latitude : LATITUDE,
+      // longitude: mapInfo?.curPos.longitude
+      //   ? mapInfo?.curPos.longitude
+      //   : LONGITUDE,
+      // latitudeDelta: LATITUDE_DELTA,
+      // longitudeDelta: LONGITUDE_DELTA,
       latitude: LATITUDE,
       longitude: LONGITUDE,
       latitudeDelta: LATITUDE_DELTA,
       longitudeDelta: LONGITUDE_DELTA,
     };
   };
-
+  const lineThreshold = 200;
   const calcDistance = newLatLng => {
-    console.log('mapInfo.prevPos = ', mapInfo.prevPos);
-    console.log('mapInfo.curPos = ', mapInfo.curPos);
+    // console.log('mapInfo.prevPos = ', mapInfo.prevPos);
+    //  console.log('mapInfo.curPos = ', mapInfo.curPos);
 
     const prevLatLng =
       mapInfo.prevPos?.longitude && true ? mapInfo.prevPos : newLatLng;
@@ -159,12 +180,10 @@ const App = () => {
   }
 
   const [pos, setPos] = useState([]);
-
   useEffect(() => {
     //console.log('useEffect 2 :::: ');
 
     //console.log('mapInfo = ', mapInfo);
-
     let {route, distanceTravelled} = mapInfo;
     //console.log('mapInfo = ', mapInfo);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -174,42 +193,72 @@ const App = () => {
           setPos(position.coords);
           const {latitude, longitude} = position.coords;
           const newCoordinate = {latitude, longitude};
-          console.log('position = ', position.coords);
+          // console.log('position = ', position.coords);
           //console.log('newCoordinate = ', newCoordinate);
           console.log('distanceTravelled = ', distanceTravelled);
           const delta = calcDistance(newCoordinate);
 
           console.log('delta = ', delta);
-          const table =
+          console.debug('route[route.length - 1] = ', route[route.length - 1]);
+          console.debug('newCoordinate = ', newCoordinate);
+
+          console.debug(
+            'test = ',
+            JSON.stringify(route[route.length - 1]) !==
+              JSON.stringify(newCoordinate),
+          );
+          let table =
             delta < 2
               ? route
-              : distanceTravelled < 100
+              : distanceTravelled < lineThreshold &&
+                JSON.stringify(route[route.length - 1]) !==
+                  JSON.stringify(newCoordinate)
               ? route.concat([newCoordinate])
-              : [];
-          console.log('mapInfo.route = ', mapInfo?.route);
+              : distanceTravelled < lineThreshold &&
+                JSON.stringify(route[route.length - 1]) ===
+                  JSON.stringify(newCoordinate)
+              ? route
+              : [].concat(route[route.length - 1]).concat([newCoordinate]);
+          console.log('TABLE =', table);
+
           setMapInfo(prev => ({
             ...prev,
             prevPos: mapInfo?.curPos && true ? mapInfo.curPos : newCoordinate,
             curPos: newCoordinate,
             route: table,
             distanceTravelled:
-              distanceTravelled > 100 ? +0 : distanceTravelled + delta,
+              distanceTravelled > lineThreshold
+                ? +0
+                : distanceTravelled + delta,
           }));
-          //console.log('mapInfo.route =', mapInfo.route);
+          // if (
+          //   distanceTravelled < lineThreshold &&
+          //   JSON.stringify(route[route.length - 1]) ===
+          //     JSON.stringify(newCoordinate)
+          // ) {
+          //   table = [];
+          // }
+
+          console.log('mapInfo updated 1 =', mapInfo.curPos);
           //console.log('distanceTravelled = ', mapInfo.distanceTravelled);
-          if (distanceTravelled > 100) {
+          if (distanceTravelled > lineThreshold && mapInfo.route.length) {
             const maDate = new Date();
+            i = i + 1;
 
             firestore()
               .collection('lines')
-              .add({
+              .doc(
+                'id' + i.toString().padStart(5 - i.toString().length - 1, '0'),
+              )
+              .set({
+                dist: distanceTravelled,
                 route: JSON.stringify(mapInfo.route),
                 date: maDate.toLocaleDateString('fr'),
               })
               .then(() => {
                 console.log('route added!');
               });
-            distanceTravelled = 0;
+            //distanceTravelled = 0;
           }
 
           //console.log('mapInfo.route =', mapInfo.route);
@@ -235,18 +284,20 @@ const App = () => {
     const latitude = mapInfo.curPos.latitude + latOffset;
     const longitude = mapInfo.curPos.longitude + lonOffset;
     //let table = mapInfo.route.concat(mapInfo.curPos);
-    setMapInfo(prev => ({
-      ...prev,
-      prevPos: mapInfo.curPos,
-      curPos: {latitude, longitude},
-      //  route: table,
-    }));
-    console.log(' >>>>>>>>>>>>>>  change position <<<<<<<<<<<<<<<<<<<');
+    //Geolocation.clearWatch(watchID);
+    // setMapInfo(prev => ({
+    //   ...prev,
+    //   // prevPos: mapInfo.curPos,
+    //   curPos: {latitude, longitude},
+    //   //  route: table,
+    // }));
+    //console.log(' >>>>>>>>>>>>>>  change position <<<<<<<<<<<<<<<<<<<');
+    //console.log('mapInfo updated 2 =', mapInfo.curPos);
+    //
+    // console.log('previous', mapInfo.prevPos);
+    // console.log('current', mapInfo.curPos);
 
-    console.log('previous', mapInfo.prevPos);
-    console.log('current', mapInfo.curPos);
-
-    updateMap();
+    updateMap({latitude, longitude});
   };
 
   const getRotation = (prevPos: any, curPos: any) => {
@@ -258,10 +309,15 @@ const App = () => {
     return (Math.atan2(yDiff, xDiff) * 180.0) / Math.PI;
   };
 
-  const updateMap = () => {
-    const {curPos, prevPos, curAng} = mapInfo;
-    const curRot = getRotation(prevPos, curPos);
-    map.animateCamera({heading: curRot, center: curPos, pitch: curAng});
+  const updateMap = ({latitude, longitude}) => {
+    const {prevPos, curAng} = mapInfo;
+    const curRot = getRotation(prevPos, {latitude, longitude});
+    map.animateCamera({
+      heading: curRot,
+      center: {latitude, longitude},
+      pitch: curAng,
+    });
+    setMapInfo({...mapInfo});
   };
   const trackPosition = () => {
     track = !track;
@@ -278,21 +334,32 @@ const App = () => {
           style={styles.flex}
           minZoomLevel={15}
           region={getMapRegion()}>
-          {mapInfo.route ? (
+          {mapInfo.lines ? (
             <Polyline
               coordinates={mapInfo.route}
               strokeWidth={10}
-              strokeColor={'#2353b2'}
-              pinColor="#ce3624"
+              strokeColor={
+                '#' + Math.floor(Math.random() * 16777215).toString(16)
+              }
+              pinColor={'#' + Math.floor(Math.random() * 16777215).toString(16)}
             />
           ) : null}
           {mapInfo.lines ? (
-            <Polyline
-              coordinates={mapInfo.lines}
-              strokeWidth={10}
-              strokeColor={'#ff53b2'}
-              pinColor="#ff3624"
-            />
+            <View>
+              {mapInfo.lines.map((value, index) => {
+                return (
+                  <Polyline
+                    key={index}
+                    coordinates={value.data}
+                    strokeWidth={10}
+                    strokeColor={value.color}
+                    pinColor={
+                      '#' + Math.floor(Math.random() * 16777215).toString(16)
+                    }
+                  />
+                );
+              })}
+            </View>
           ) : null}
           <Marker coordinate={mapInfo.curPos} anchor={{x: 0.5, y: 0.5}}>
             <Image
@@ -304,24 +371,24 @@ const App = () => {
         <View style={styles.buttonContainerUpDown}>
           <TouchableOpacity
             style={[styles.button, styles.up]}
-            onPress={() => changePosition(0.01, 0)}>
+            onPress={() => changePosition(0.001, 0)}>
             <Text>+ Lat</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.button, styles.down]}
-            onPress={() => changePosition(-0.01, 0)}>
+            onPress={() => changePosition(-0.001, 0)}>
             <Text>- Lat</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.buttonContainerLeftRight}>
           <TouchableOpacity
             style={[styles.button, styles.left]}
-            onPress={() => changePosition(0, -0.01)}>
+            onPress={() => changePosition(0, -0.001)}>
             <Text>- Lon</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.button, styles.right]}
-            onPress={() => changePosition(0, 0.01)}>
+            onPress={() => changePosition(0, 0.001)}>
             <Text>+ Lon</Text>
           </TouchableOpacity>
           <TouchableOpacity
