@@ -5,7 +5,7 @@ import {StyleSheet, Image} from 'react-native';
 import {createStackNavigator} from '@react-navigation/stack';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 
-import Search from '../Components/Search';
+import SignInScreen from '../Components/SignInScreen';
 import FilmDetail from '../Components/FilmDetail';
 import Favorites from '../Components/Favorites';
 import News from '../Components/MapLines';
@@ -14,7 +14,7 @@ import {NavigationContainer} from '@react-navigation/native';
 
 const SearchStackNavigator = createStackNavigator({
   Search: {
-    screen: Search,
+    screen: SignInScreen,
     navigationOptions: {
       title: 'Rechercher',
     },

@@ -15,120 +15,8 @@ import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import MapLines from './Components/MapLines';
 import auth from '@react-native-firebase/auth';
 import {useEffect, useState} from 'react';
-
-function LoginScreen({navigation}) {
-  // auth()
-  //   .createUserWithEmailAndPassword(
-  //     'jane.doe@example.com',
-  //     'SuperSecretPassword!',
-  //   )
-  //   .then(() => {
-  //     console.log('User account created & signed in!');
-  //   })
-  //   .catch(error => {
-  //     if (error.code === 'auth/email-already-in-use') {
-  //       console.log('That email address is already in use!');
-  //     }
-  //
-  //     if (error.code === 'auth/invalid-email') {
-  //       console.log('That email address is invalid!');
-  //     }
-  //
-  //     console.error(error);
-  //   });
-
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-
-  const signIn = () => {
-    auth()
-      .signInWithEmailAndPassword(email, password)
-      .then(() => {
-        navigation
-          .navigate('Settings')
-          .then(r => console.log('User account signed in!'));
-      })
-      .catch(error => {
-        if (error.code === 'auth/email-already-in-use') {
-          console.log('That email address is already in use!');
-        }
-
-        if (error.code === 'auth/invalid-email') {
-          console.log('That email address is invalid!');
-        }
-
-        console.error(error);
-      });
-  };
-
-  const createAccount = () => {
-    auth()
-      .createUserWithEmailAndPassword(email, password)
-      .then(() => {
-        console.log('User account created & signed in!');
-      })
-      .catch(error => {
-        if (error.code === 'auth/email-already-in-use') {
-          console.log('That email address is already in use!');
-        }
-
-        if (error.code === 'auth/invalid-email') {
-          console.log('That email address is invalid!');
-        }
-
-        console.error(error);
-      });
-  };
-
-  return (
-    <View style={styles.container}>
-      <Image
-        style={{width: 40, height: 40}}
-        source={require('./assets/car.jpg')}
-      />
-
-      <StatusBar style="auto" />
-      <View style={styles.inputView}>
-        <TextInput
-          style={styles.TextInput}
-          placeholder="Email."
-          placeholderTextColor="#003f5c"
-          onChangeText={email => setEmail(email)}
-        />
-      </View>
-
-      <View style={styles.inputView}>
-        <TextInput
-          style={styles.TextInput}
-          placeholder="Password."
-          placeholderTextColor="#003f5c"
-          secureTextEntry={true}
-          onChangeText={password => setPassword(password)}
-        />
-      </View>
-
-      <TouchableOpacity>
-        <Text style={styles.forgot_button}>Forgot Password?</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.loginBtn} onPress={() => signIn()}>
-        <Text style={styles.loginBtn}>LOGIN</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-function HomeScreen({navigation}) {
-  return (
-    <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
-      <Text>Home screen</Text>
-      <Button
-        title="Go to Details"
-        onPress={() => navigation.navigate('Details')}
-      />
-    </View>
-  );
-}
+import SignInScreen from './Components/SignInScreen';
+import SignUpScreen from './Components/SignUpScreen';
 
 function SettingsScreen({navigation}) {
   const [initializing, setInitializing] = useState(true);
@@ -146,7 +34,9 @@ function SettingsScreen({navigation}) {
     auth()
       .signOut()
       .then(() => {
-        navigation.navigate('Login').then(r => console.log('User signed out!'));
+        navigation
+          .navigate('SignIn')
+          .then(r => console.log('User signed out!'));
       });
   };
 
@@ -165,7 +55,7 @@ function SettingsScreen({navigation}) {
         <Text>Settings screen</Text>
         <Button
           title="Go to Login"
-          onPress={() => navigation.navigate('Login')}
+          onPress={() => navigation.navigate('SignIn')}
         />
       </View>
     );
@@ -179,24 +69,14 @@ function SettingsScreen({navigation}) {
   );
 }
 
-const HomeStack = createNativeStackNavigator();
-
-// function HomeStackScreen() {
-//   return (
-//     <HomeStack.Navigator>
-//       <HomeStack.Screen name="Home" component={HomeScreen} />
-//       <HomeStack.Screen name="Login" component={LoginScreen} />
-//     </HomeStack.Navigator>
-//   );
-// }
-
 const SettingsStack = createNativeStackNavigator();
 
 function SettingsStackScreen() {
   return (
     <SettingsStack.Navigator>
       <SettingsStack.Screen name="Settings" component={SettingsScreen} />
-      <SettingsStack.Screen name="Login" component={LoginScreen} />
+      <SettingsStack.Screen name="SignIn" component={SignInScreen} />
+      <SettingsStack.Screen name="SignUp" component={SignUpScreen} />
     </SettingsStack.Navigator>
   );
 }
